@@ -1,0 +1,18 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+env/
+.env
+.pytest_cache/
+.vscode/
+.idea/
+
+# Model artifacts (generated — can be retrained)
+models/
+*.joblib
+
+# Plots (generated — can be regenerated)
+plots/
