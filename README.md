@@ -1,133 +1,116 @@
-# Loan Approval Prediction - Machine Learning Project
+# Loan Approval Prediction Machine Learning Project
 
-A complete end-to-end Machine Learning project that predicts whether a loan application will be **Approved** or **Rejected** based on applicant features like income, CIBIL score, assets, and more.
+This repository contains a complete, end-to-end Machine Learning pipeline to predict loan approval status (Approved or Rejected) based on applicant details like CIBIL score, income, assets, and loan terms.
 
-## Project Overview
+## 📊 Project Overview
 
-This project demonstrates a full ML pipeline:
-- **Data Acquisition** — Downloads the complete 4,269-record dataset
-- **Data Preprocessing** — Handles missing values, encodes categorical features, scales numerical features
-- **Model Training** — Trains and compares Logistic Regression, Decision Tree, and Random Forest classifiers
-- **Model Evaluation** — Compares models using Accuracy, F1-Score, and ROC-AUC
-- **Inference** — Provides a CLI tool to predict loan status for new applicants
+Predicting loan default or approval is a critical task for financial institutions. This project automates the workflow by:
+1. **Data Preprocessing**: Handling leading/trailing whitespaces in string values and column headers, imputing missing values, and scaling features.
+2. **Exploratory Data Analysis (EDA)**: Generating and saving visualizations to understand feature distributions and correlations.
+3. **Model Selection**: Training and comparing multiple classification models: **Logistic Regression**, **Decision Tree**, and **Random Forest**.
+4. **Pipeline Serialization**: Storing the best-performing model along with the pre-fitted preprocessing pipeline for future inference.
+5. **Interactive Prediction**: Providing a command-line interface to classify new loan applications.
 
-## Dataset
+---
 
-The dataset contains **4,269 loan applications** with 13 features:
+## 📈 Model Performance & Comparison
 
-| Feature | Description |
-|---|---|
-| `loan_id` | Unique loan identifier |
-| `no_of_dependents` | Number of dependents |
-| `education` | Graduate / Not Graduate |
-| `self_employed` | Yes / No |
-| `income_annum` | Annual income |
-| `loan_amount` | Requested loan amount |
-| `loan_term` | Loan term in months |
-| `cibil_score` | Credit score (300-900) |
-| `residential_assets_value` | Value of residential assets |
-| `commercial_assets_value` | Value of commercial assets |
-| `luxury_assets_value` | Value of luxury assets |
-| `bank_asset_value` | Value of bank assets |
-| `loan_status` | Target — Approved / Rejected |
-
-## Model Comparison Results
+The models were evaluated on an 80/20 train-test split stratified by the target label (`loan_status`). The comparison is as follows:
 
 | Model | Accuracy | F1-Score | ROC-AUC |
-|---|---|---|---|
-| Logistic Regression | 91.33% | 93.15% | 97.34% |
-| Decision Tree | 98.13% | 98.49% | 98.01% |
-| **Random Forest** | **98.24%** | **98.59%** | **99.89%** |
+| :--- | :---: | :---: | :---: |
+| Logistic Regression | 91.33% | 0.9315 | 0.9734 |
+| Decision Tree | 98.13% | 0.9849 | 0.9801 |
+| **Random Forest (Best)** | **98.24%** | **0.9859** | **0.9990** |
 
-**Best Model: Random Forest** with 98.59% F1-Score and 99.89% ROC-AUC.
+### Best Model Details (Random Forest)
+- **Accuracy**: `98.24%`
+- **F1-Score**: `0.9859`
+- **ROC-AUC**: `0.9990`
+- **Confusion Matrix**:
+  ```text
+  [[314   9]    <- [True Rejected, False Approved]
+   [  6 525]]   <- [False Rejected, True Approved]
+  ```
 
-## EDA Visualizations
+---
 
-### CIBIL Score Distribution by Loan Status
-![CIBIL Score vs Status](plots/cibil_score_vs_status.png)
+## 🎨 Exploratory Data Analysis Visualizations
 
-### Loan Amount vs Annual Income
-![Loan Amount vs Income](plots/loan_amount_vs_income.png)
+The pipeline generates three analytical plots saved in the `plots/` directory:
 
-### Correlation Heatmap
-![Correlation Matrix](plots/correlation_matrix.png)
+1. **CIBIL Score vs Loan Status (`plots/cibil_score_vs_status.png`)**: Demonstrates the strong correlation between high CIBIL scores (generally > 600) and successful loan approvals.
+2. **Annual Income vs Loan Amount (`plots/loan_amount_vs_income.png`)**: Scatter plot showing the relationship between earnings and requested loan amounts, color-coded by approval status.
+3. **Correlation Matrix Heatmap (`plots/correlation_matrix.png`)**: Illustrates linear correlations between all numerical features.
 
-## Setup & Installation
+---
 
+## 📁 Repository Structure
+
+```text
+├── loan_approval_dataset.csv     # The complete dataset (approx. 4,269 records)
+├── download_data.py              # Script to download dataset from source
+├── data_cleaner.py               # Preprocessing pipelines (fit/transform)
+├── model.py                      # Model training, evaluation, and serialization logic
+├── visualize.py                  # Script to generate and save EDA plots
+├── main.py                       # Main pipeline execution script
+├── predict.py                    # Script to perform prediction on new profiles
+├── models/                       # Directory containing saved model artifacts
+│   ├── best_model.joblib         # Serialized Random Forest model
+│   └── preprocessors.joblib      # Serialized Scaler & Label Encoders
+├── plots/                        # Directory containing EDA plots
+│   ├── cibil_score_vs_status.png
+│   ├── correlation_matrix.png
+│   └── loan_amount_vs_income.png
+└── README.md                     # This file
+```
+
+---
+
+## ⚙️ Setup and Installation
+
+### 1. Prerequisites
+Make sure you have Python 3.8+ installed.
+
+### 2. Install Dependencies
+Install the required packages using `pip`:
 ```bash
-# Clone the repository
-git clone https://github.com/imshubham22apr-gif/Loan-Approval-Prediction-ML.git
-cd Loan-Approval-Prediction-ML
-
-# Install dependencies
 pip install pandas numpy scikit-learn matplotlib seaborn joblib
 ```
 
-## Usage
+---
 
-### 1. Train the Model
+## 🚀 How to Run the Pipeline
+
+### 1. Download Data
+If you don't have the dataset locally, download the complete 4,200+ row dataset:
 ```bash
-python main.py
+python download_data.py
 ```
-This will:
-- Download the dataset (if not already present)
-- Clean and preprocess the data
-- Train 3 models and compare them
-- Save the best model to `models/` directory
 
-### 2. Generate Visualizations
+### 2. Generate EDA Visualizations
+Create the exploratory plots:
 ```bash
 python visualize.py
 ```
-Generates EDA plots in the `plots/` directory.
 
-### 3. Predict Loan Status (CLI)
+### 3. Train Models
+Run the complete training, evaluation, and serialization pipeline:
 ```bash
-# Interactive mode - enter applicant details manually
+python main.py
+```
+
+### 4. Run Prediction / Inference
+To run a prediction on a sample applicant profile (with a high CIBIL score):
+```bash
 python predict.py
-
-# Demo mode - uses sample data
-python predict.py --demo
 ```
 
-**Demo output:**
+To run a prediction with custom applicant parameters:
+```bash
+python predict.py <dependents> <education> <self_employed> <income> <loan_amount> <term> <cibil> <residential_val> <commercial_val> <luxury_val> <bank_val>
 ```
-==================================================
-  Prediction: APPROVED
-  Confidence - Rejected: 1.00%  |  Approved: 99.00%
-==================================================
+**Example (High Risk - Rejected)**:
+```bash
+python predict.py 0 "Not Graduate" No 3000000 10000000 20 300 2000000 1000000 3000000 1000000
 ```
-
-## Project Structure
-
-```
-Loan-Approval-Prediction-ML/
-|-- main.py                  # Full ML pipeline (train + evaluate + save)
-|-- data_cleaner.py          # Data loading, cleaning, preprocessing
-|-- model.py                 # Model training, evaluation, serialization
-|-- visualize.py             # EDA plot generation
-|-- predict.py               # CLI inference tool
-|-- download_data.py         # Dataset downloader
-|-- loan_approval_dataset.csv # Dataset (4,269 records)
-|-- .gitignore
-|-- README.md
-|-- models/                  # Saved model & preprocessor artifacts (generated)
-|-- plots/                   # Generated EDA visualizations
-```
-
-## Tech Stack
-
-- **Python 3.11**
-- **pandas** — Data manipulation
-- **NumPy** — Numerical operations
-- **scikit-learn** — ML models, preprocessing, evaluation
-- **matplotlib & seaborn** — Data visualization
-- **joblib** — Model serialization
-
-## Author
-
-**Shubham** — [GitHub](https://github.com/imshubham22apr-gif)
-
-## License
-
-This project is open source and available under the [MIT License](LICENSE).

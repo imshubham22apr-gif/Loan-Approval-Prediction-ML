@@ -10,9 +10,3 @@ env/
 .vscode/
 .idea/
 
-# Model artifacts (generated — can be retrained)
-models/
-*.joblib
-
-# Plots (generated — can be regenerated)
-plots/
