@@ -114,3 +114,11 @@ python predict.py <dependents> <education> <self_employed> <income> <loan_amount
 ```bash
 python predict.py 0 "Not Graduate" No 3000000 10000000 20 300 2000000 1000000 3000000 1000000
 ```
+
+
+### 5. Web Dashboard (New Feature!)
+We have added an interactive web interface using Streamlit to make testing easy without using the CLI.
+`ash
+pip install streamlit
+streamlit run app.py
+`
