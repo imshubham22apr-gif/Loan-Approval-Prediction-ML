@@ -1,54 +1,100 @@
+"""Production CLI Underwriting Inference Tool.
+
+Evaluates an applicant's loan application using the calibrated credit risk pipeline,
+displaying institutional metrics:
+- Calibrated Probability of Default (PD)
+- Expected Financial Loss (EL = PD * LGD * EAD)
+- Financial Ratios (LTV, DTI, Liquidity, Asset-to-Loan)
+- SHAP Waterfall Attributions (Top Drivers)
+- Adverse Action Remedies (if rejected)
+"""
+
 import os
 import sys
-import pandas as pd
+import json
 import joblib
-import data_cleaner as dc
-import model as ml
+import pandas as pd
+import numpy as np
 
-def predict_single_instance(features_dict, models_dir="models"):
-    # Load model and preprocessor
-    try:
-        model, preprocessors = ml.load_pipeline(models_dir)
-    except Exception as e:
-        print(f"Error loading model from {models_dir}: {e}")
-        print("Please ensure you have run main.py to train and save the model.")
-        return None, None
-    
-    # Convert input dictionary to DataFrame
-    df = pd.DataFrame([features_dict])
-    
-    # Define features
-    num_cols = ['no_of_dependents', 'income_annum', 'loan_amount', 'loan_term', 
-                'cibil_score', 'residential_assets_value', 'commercial_assets_value', 
-                'luxury_assets_value', 'bank_asset_value']
-    cat_cols = ['education', 'self_employed']
-    
-    # Process the dataframe using the same data cleaner logic
-    df = dc.clean_data(df)
-    df_processed = dc.transform_data(df, preprocessors, categorical_cols=cat_cols, numerical_cols=num_cols)
-    
-    # The models are trained on the preprocessed training set, which does not contain 'loan_id' or 'loan_status'
-    # Drop them if they somehow got in
-    df_processed = df_processed.drop(columns=['loan_id', 'loan_status'], errors='ignore')
-    
-    # Make prediction
-    prediction = model.predict(df_processed)[0]
-    
-    # Get probability if possible
-    prob = None
-    if hasattr(model, "predict_proba"):
-        prob = model.predict_proba(df_processed)[0]
-        
-    status = "Approved" if prediction == 1 else "Rejected"
-    confidence = prob[prediction] if prob is not None else None
-    
-    return status, confidence
+from src.features.financial_ratios import FinancialRatioTransformer
+from src.models.cost_matrix import ExpectedLossCalculator
+from src.explainability.shap_explainer import CreditRiskExplainer
+from src.explainability.adverse_action import AdverseActionGenerator
 
-if __name__ == "__main__":
-    # If arguments are passed, parse them. Otherwise use sample data.
+
+def predict_single_applicant(features_dict: dict, models_dir: str = "models"):
+    """Runs end-to-end inference and explainability on a single applicant profile."""
+    pipeline_path = os.path.join(models_dir, "calibrated_credit_pipeline.joblib")
+    meta_path = os.path.join(models_dir, "model_metadata.json")
+
+    if not os.path.exists(pipeline_path):
+        print(f"Error: Pipeline not found at '{pipeline_path}'. Run 'python -m src.models.train' first.")
+        return None
+
+    pipeline = joblib.load(pipeline_path)
+
+    metadata = {}
+    if os.path.exists(meta_path):
+        with open(meta_path, "r") as f:
+            metadata = json.load(f)
+
+    threshold = metadata.get("optimal_threshold", 0.0991)
+    lgd = metadata.get("lgd", 0.45)
+
+    df_raw = pd.DataFrame([features_dict])
+
+    # 1. Financial Ratios
+    ratios_df = pipeline.named_steps["financial_ratios"].transform(df_raw)
+    ltv = float(ratios_df["ltv_ratio"].iloc[0])
+    dti = float(ratios_df["dti_ratio"].iloc[0])
+    liquidity = float(ratios_df["liquidity_ratio"].iloc[0])
+    asset_to_loan = float(ratios_df["asset_to_loan_ratio"].iloc[0])
+    total_assets = float(ratios_df["total_assets"].iloc[0])
+
+    # 2. Calibrated Probability of Default
+    prob_default = float(pipeline.predict_proba(df_raw)[0, 1])
+
+    # 3. Decision
+    decision = "Approved" if prob_default < threshold else "Rejected"
+
+    # 4. Expected Loss
+    loan_amt = float(features_dict.get("loan_amount", 0.0))
+    el_calc = ExpectedLossCalculator(lgd=lgd)
+    expected_loss = float(el_calc.calculate_expected_loss(
+        probability_of_default=np.array([prob_default]),
+        exposure_at_default=np.array([loan_amt])
+    )[0])
+
+    # 5. SHAP Explanations
+    explainer = CreditRiskExplainer(pipeline)
+    shap_info = explainer.explain_raw_applicant(features_dict, top_k=3)
+
+    # 6. Adverse Action Notice (if rejected)
+    remedies = []
+    if decision == "Rejected":
+        adverse_gen = AdverseActionGenerator(pipeline, optimal_threshold=threshold)
+        remedies = adverse_gen.get_recourse_actions(features_dict, max_recommendations=3)
+
+    return {
+        "decision": decision,
+        "prob_default": prob_default,
+        "threshold": threshold,
+        "expected_loss": expected_loss,
+        "financial_ratios": {
+            "ltv": ltv,
+            "dti": dti,
+            "liquidity": liquidity,
+            "asset_to_loan": asset_to_loan,
+            "total_assets": total_assets
+        },
+        "top_risk_drivers": shap_info["top_risk_drivers"],
+        "top_approval_drivers": shap_info["top_approval_drivers"],
+        "remedies": remedies
+    }
+
+
+def main():
     if len(sys.argv) > 1:
-        # Example command line usage:
-        # python predict.py 2 Graduate No 9600000 29900000 12 778 2400000 17600000 22700000 8000000
         try:
             sample_features = {
                 'no_of_dependents': int(sys.argv[1]),
@@ -64,12 +110,10 @@ if __name__ == "__main__":
                 'bank_asset_value': float(sys.argv[11])
             }
         except IndexError:
-            print("Insufficient arguments! Usage:")
-            print("python predict.py <dependents> <education> <self_employed> <income> <loan_amount> <term> <cibil> <residential_val> <commercial_val> <luxury_val> <bank_val>")
+            print("Usage: python predict.py <dependents> <education> <self_employed> <income> <loan_amount> <term> <cibil> <residential_val> <commercial_val> <luxury_val> <bank_val>")
             sys.exit(1)
     else:
-        # Use a default test sample that should typically get approved (high CIBIL score)
-        print("No arguments provided. Running inference with a sample approved-case profile...")
+        print("No CLI arguments passed. Running inference on sample applicant profile...\n")
         sample_features = {
             'no_of_dependents': 2,
             'education': 'Graduate',
@@ -83,14 +127,56 @@ if __name__ == "__main__":
             'luxury_assets_value': 22700000,
             'bank_asset_value': 8000000
         }
-        
-    print("\nApplicant Features:")
+
+    print("=" * 65)
+    print("INSTITUTIONAL CREDIT RISK UNDERWRITING ASSESSMENT")
+    print("=" * 65)
+    print("APPLICANT PROFILE:")
     for k, v in sample_features.items():
-        print(f"  {k}: {v}")
-        
-    status, confidence = predict_single_instance(sample_features)
-    if status:
-        print(f"\nPrediction Results:")
-        print(f"  Loan Status: {status}")
-        if confidence is not None:
-            print(f"  Confidence: {confidence:.2%}")
+        if isinstance(v, float) and v >= 10000:
+            print(f"  {k:<26}: INR {v:,.2f}")
+        else:
+            print(f"  {k:<26}: {v}")
+
+    result = predict_single_applicant(sample_features)
+    if not result:
+        return
+
+    print("\n" + "-" * 65)
+    print("UNDERWRITING DECISION & RISK METRICS:")
+    print("-" * 65)
+    dec = result["decision"]
+    symbol = "[APPROVED]" if dec == "Approved" else "[REJECTED]"
+    print(f"  Final Decision:               {symbol} {dec.upper()}")
+    print(f"  Calibrated Default Risk (PD): {result['prob_default']:.2%}")
+    print(f"  Cost-Optimal Risk Cutoff:     {result['threshold']:.2%}")
+    print(f"  Expected Financial Loss (EL): INR {result['expected_loss']:,.2f}")
+
+    print("\nFINANCIAL RATIOS:")
+    r = result["financial_ratios"]
+    print(f"  Loan-to-Value (LTV):          {r['ltv']:.2f}")
+    print(f"  Debt-to-Income (DTI):         {r['dti']:.2f}")
+    print(f"  Liquidity Coverage:           {r['liquidity']:.2f}")
+    print(f"  Asset-to-Loan Coverage:       {r['asset_to_loan']:.2f}")
+    print(f"  Total Assets Net Valuation:   INR {r['total_assets']:,.2f}")
+
+    print("\nSHAP FACTOR ATTRIBUTION:")
+    print("  Key Mitigating Strengths (Approval Factors):")
+    for d in result["top_approval_drivers"]:
+        print(f"   + {d['feature']:<25} (SHAP impact: {d['shap_value']:+.3f})")
+    print("  Key Vulnerabilities (Risk Drivers):")
+    for d in result["top_risk_drivers"]:
+        print(f"   - {d['feature']:<25} (SHAP impact: {d['shap_value']:+.3f})")
+
+    if result["remedies"]:
+        print("\nADVERSE ACTION NOTICE (Actionable Remedies for Approval):")
+        for i, rem in enumerate(result["remedies"], 1):
+            appr = " -> Achieves Approval" if rem["achieves_approval"] else ""
+            print(f"  {i}. [{rem['action_type']}] {rem['description']}")
+            print(f"     Risk reduced by {rem['risk_reduction_pct']}% (New PD: {rem['new_pd']:.2%}){appr} | Effort: {rem['effort_level']}")
+
+    print("=" * 65)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,64 @@
+# Credit Risk Model Configuration
+data:
+  raw_data_path: "loan_approval_dataset.csv"
+  target_col: "loan_status"
+  drop_cols: ["loan_id"]
+  test_size: 0.20
+  random_state: 42
+  cv_splits: 5
+
+features:
+  numerical_cols:
+    - no_of_dependents
+    - income_annum
+    - loan_amount
+    - loan_term
+    - cibil_score
+    - residential_assets_value
+    - commercial_assets_value
+    - luxury_assets_value
+    - bank_asset_value
+  categorical_cols:
+    - education
+    - self_employed
+  derived_financial_ratios:
+    - ltv_ratio
+    - dti_ratio
+    - liquidity_ratio
+    - total_assets
+    - asset_to_loan_ratio
+
+# Financial Risk & Cost Matrix Settings
+credit_risk:
+  lgd: 0.45                    # Loss Given Default (Basel standard retail/SME proxy)
+  cost_false_positive: 1.0     # Relative cost of default (approving a bad borrower)
+  cost_false_negative: 0.08    # Relative cost of opportunity loss (rejecting a good borrower, lost interest margin)
+  default_target_value: 0      # In raw data: Approved=1, Rejected=0. Default Risk modeling maps Rejected/Default=1.
+
+# Monotonic Constraints for LightGBM
+# 1 = strictly non-decreasing, -1 = strictly non-increasing, 0 = unconstrained
+monotonic_constraints:
+  cibil_score: -1
+  income_annum: -1
+  ltv_ratio: 1
+  dti_ratio: 1
+  asset_to_loan_ratio: -1
+
+model:
+  n_estimators: 200
+  learning_rate: 0.05
+  num_leaves: 31
+  max_depth: 6
+  subsample: 0.8
+  colsample_bytree: 0.8
+  random_state: 42
+
+calibration:
+  method: "sigmoid"            # Platt scaling ('sigmoid') or isotonic ('isotonic')
+
+paths:
+  model_dir: "models"
+  reports_dir: "reports"
+  model_file: "models/calibrated_credit_model.joblib"
+  pipeline_file: "models/full_pipeline.joblib"
+  baseline_stats_file: "models/baseline_stats.json"

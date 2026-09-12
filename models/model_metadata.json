@@ -1,0 +1,95 @@
+{
+  "optimal_threshold": 0.0991,
+  "lgd": 0.45,
+  "cost_fp": 1.0,
+  "cost_fn": 0.08,
+  "numeric_cols": [
+    "no_of_dependents",
+    "income_annum",
+    "loan_amount",
+    "loan_term",
+    "cibil_score",
+    "residential_assets_value",
+    "commercial_assets_value",
+    "luxury_assets_value",
+    "bank_asset_value",
+    "ltv_ratio",
+    "dti_ratio",
+    "liquidity_ratio",
+    "total_assets",
+    "asset_to_loan_ratio"
+  ],
+  "cat_cols": [
+    "education",
+    "self_employed"
+  ],
+  "metrics": {
+    "roc_auc": 0.999,
+    "pr_auc": 0.9983,
+    "brier_score": 0.0131,
+    "optimal_threshold": 0.0991,
+    "min_business_cost": 1.68,
+    "naive_05_cost": 12.4,
+    "cost_reduction_pct": 86.45,
+    "confusion_matrix": [
+      [
+        510,
+        21
+      ],
+      [
+        0,
+        323
+      ]
+    ],
+    "classification_report": {
+      "0": {
+        "precision": 1.0,
+        "recall": 0.96045197740113,
+        "f1-score": 0.9798270893371758,
+        "support": 531.0
+      },
+      "1": {
+        "precision": 0.938953488372093,
+        "recall": 1.0,
+        "f1-score": 0.9685157421289355,
+        "support": 323.0
+      },
+      "accuracy": 0.9754098360655737,
+      "macro avg": {
+        "precision": 0.9694767441860466,
+        "recall": 0.980225988700565,
+        "f1-score": 0.9741714157330557,
+        "support": 854.0
+      },
+      "weighted avg": {
+        "precision": 0.9769109797941289,
+        "recall": 0.9754098360655737,
+        "f1-score": 0.9755489100066587,
+        "support": 854.0
+      }
+    },
+    "total_portfolio_expected_loss_inr": 2284692756.24,
+    "fairness_audit": [
+      {
+        "feature": "education",
+        "privileged_group": "Graduate",
+        "unprivileged_group": "Not Graduate",
+        "privileged_approval_rate": 0.6215,
+        "unprivileged_approval_rate": 0.5728,
+        "disparate_impact_ratio": 0.9216,
+        "four_fifths_compliant": true,
+        "status": "PASS"
+      },
+      {
+        "feature": "self_employed",
+        "privileged_group": "No",
+        "unprivileged_group": "Yes",
+        "privileged_approval_rate": 0.5966,
+        "unprivileged_approval_rate": 0.5977,
+        "disparate_impact_ratio": 1.0019,
+        "four_fifths_compliant": true,
+        "status": "PASS"
+      }
+    ]
+  }
+}
