@@ -55,7 +55,7 @@ This repository implements a complete, **production-grade credit risk underwriti
 | **Problem Formulation** | Symmetric Binary Classification (`0/1`) | **Calibrated Probability of Default ($PD$)** & continuous **Expected Loss ($EL$)** |
 | **Optimization Target** | Accuracy / Symmetric F1-Score | **Asymmetric Business Cost Curve Minimization** ($\arg\min_\tau \mathcal{L}(\tau)$) |
 | **Feature Representation** | Raw numbers with arbitrary MinMax scaling | **Banking Domain Ratios** (LTV, DTI, Liquidity Coverage, Asset Coverage) |
-| **Inductive Bias** | Unconstrained Black-Box Trees | **Strict Monotonic Constraints** ($\frac{\partial PD}{\partial \text{CIBIL}} \le 0$, $\frac{\partial PD}{\partial \text{LTV}} \ge 0$) |
+| **Inductive Bias** | Unconstrained Black-Box Trees | **Strict Monotonic Constraints** ($\partial PD / \partial \text{CIBIL} \le 0$, $\partial PD / \partial \text{LTV} \ge 0$) |
 | **Data Leakage Prevention** | Ad-hoc script preprocessing | Single `sklearn.pipeline.Pipeline` + `ColumnTransformer` (zero cross-fold contamination) |
 | **Probability Calibration** | None (raw heuristic scores) | **5-Fold Stratified Platt Scaling (`CalibratedClassifierCV`)** verified by **Brier Score** |
 | **Model Interpretability** | Global correlation heatmap | **Local SHAP TreeExplainer Waterfall** (Top 3 approval strengths & risk drivers) |
@@ -111,22 +111,22 @@ flowchart TD
 ### 1. Basel II/III Expected Loss (EL)
 Under the Advanced Internal Ratings-Based (A-IRB) framework of the Basel Accords, credit risk loss is modeled as:
 $$\text{Expected Loss (EL)} = PD \times LGD \times EAD$$
-- **$PD$ (Probability of Default)**: The model's calibrated probability that the applicant fails to service debt within the benchmark period $\in [0, 1]$.
-- **$LGD$ (Loss Given Default)**: The fraction of exposure lost if default occurs, net of collateral recovery costs. Set to standard Basel retail proxy:
-  $$LGD = 0.45 \quad (45\%)$$
-- **$EAD$ (Exposure at Default)**: Total gross loan commitment requested (`loan_amount`) in INR ($\text{₹}$).
+- **$PD$ (Probability of Default)**: The model's calibrated probability that the applicant fails to service debt within the benchmark period ($PD \in [0, 1]$).
+- **$LGD$ (Loss Given Default)**: The fraction of exposure lost if default occurs, net of collateral recovery costs (Basel retail proxy standard: $LGD = 0.45$, i.e., 45%).
+- **$EAD$ (Exposure at Default)**: Total gross loan commitment requested (`loan_amount`) in INR (₹).
 
 ---
 
 ### 2. Asymmetric Business Cost Curve & Threshold Optimization
 In credit underwriting, classification errors are fundamentally asymmetric:
 - **False Negative ($FN$, approving a defaulter)**: Incurs principal default loss:
-  $$C_{\text{bad\_loan}} = 1.0 \times LGD = 0.45 \times \text{loan\_amount}$$
+  $$C_{\text{Default}} = 1.0 \times LGD = 0.45 \times \text{Loan Amount}$$
 - **False Positive ($FP$, rejecting a good applicant)**: Incurs lost net interest margin:
-  $$C_{\text{lost\_customer}} \approx 0.08 \times \text{loan\_amount}$$
+  $$C_{\text{Lost Customer}} \approx 0.08 \times \text{Loan Amount}$$
 
 The optimal underwriting threshold $\tau^*$ is discovered by minimizing the cumulative empirical business loss over the threshold domain:
-$$\tau^* = \arg\min_{\tau \in [0.01, 0.99]} \left( C_{\text{bad\_loan}} \cdot FN(\tau) + C_{\text{lost\_customer}} \cdot FP(\tau) \right)$$
+
+$$\tau^* = \arg\min_{\tau \in [0.01, 0.99]} \left( C_{\text{Default}} \cdot FN(\tau) + C_{\text{Lost Customer}} \cdot FP(\tau) \right)$$
 
 ```
 ========================================================================
@@ -144,16 +144,20 @@ Financial Loss Reduction Achieved:  86.45% vs Default 0.5 Threshold
 Raw balance sheet entries are transformed into institutional underwriting ratios:
 
 1. **Loan-to-Value (LTV) Ratio**:
-   $$\text{LTV} = \frac{\text{loan\_amount}}{\text{residential\_assets} + \text{commercial\_assets} + \varepsilon}$$
+   $$\text{LTV} = \frac{\text{Loan Amount}}{\text{Residential Assets} + \text{Commercial Assets} + \varepsilon}$$
+
 2. **Debt-to-Income (DTI) / Burden Ratio**:
-   $$\text{DTI} = \frac{\text{loan\_amount} / \text{loan\_term}}{\text{income\_annum} + \varepsilon}$$
+   $$\text{DTI} = \frac{\text{Loan Amount} / \text{Loan Term}}{\text{Annual Income} + \varepsilon}$$
+
 3. **Asset Liquidity Coverage Ratio**:
-   $$\text{Liquidity} = \frac{\text{bank\_asset\_value}}{\text{luxury\_assets} + \text{residential\_assets} + \text{commercial\_assets} + \varepsilon}$$
+   $$\text{Liquidity} = \frac{\text{Bank Assets}}{\text{Luxury Assets} + \text{Residential Assets} + \text{Commercial Assets} + \varepsilon}$$
+
 4. **Asset-to-Loan Coverage Ratio**:
-   $$\text{Asset Coverage} = \frac{\text{bank\_assets} + \text{luxury\_assets} + \text{residential\_assets} + \text{commercial\_assets}}{\text{loan\_amount} + \varepsilon}$$
+   $$\text{Asset Coverage} = \frac{\text{Total Assets}}{\text{Loan Amount} + \varepsilon}$$
 
 #### Monotonic Constraints
 To ensure regulatory compliance and prevent spurious tree splits, strict monotonic constraints are enforced directly during LightGBM tree construction:
+
 $$\frac{\partial PD}{\partial \text{CIBIL}} \le 0, \quad \frac{\partial PD}{\partial \text{Income}} \le 0, \quad \frac{\partial PD}{\partial \text{LTV}} \ge 0, \quad \frac{\partial PD}{\partial \text{DTI}} \ge 0, \quad \frac{\partial PD}{\partial \text{Asset Coverage}} \le 0$$
 
 ```python
@@ -171,10 +175,12 @@ monotone_constraints = {
 ---
 
 ### 4. Leakage-Proof Probability Calibration (Platt Scaling)
-Raw ensemble predictions are calibrated via 5-Fold Stratified Platt Scaling ($\sigma(z) = \frac{1}{1 + e^{A z + B}}$) inside a cross-validated wrapper (`CalibratedClassifierCV`).
+Raw ensemble predictions are calibrated via 5-Fold Stratified Platt Scaling ($\sigma(z) = \frac{1}{1 + e^{-(A z + B)}}$) inside a cross-validated wrapper (`CalibratedClassifierCV`).
 
 Probabilistic calibration is evaluated via the **Brier Score Loss**:
+
 $$BS = \frac{1}{N} \sum_{i=1}^N \left( \hat{p}_i - y_i \right)^2 = \mathbf{0.0131}$$
+
 *(A Brier Score near zero confirms that a predicted 5% risk corresponds empirically to exactly 5 defaults out of 100 borrowers).*
 
 ---
@@ -182,22 +188,25 @@ $$BS = \frac{1}{N} \sum_{i=1}^N \left( \hat{p}_i - y_i \right)^2 = \mathbf{0.013
 ### 5. Explainable AI (XAI) & FCRA/ECOA Adverse Action Recourse
 
 1. **SHAP Factor Attribution**: For every inference call, TreeExplainer computes exact Shapley attributions:
+
    $$\phi_i(x) = \sum_{S \subseteq F \setminus \{i\}} \frac{|S|!(|F| - |S| - 1)!}{|F|!} \left( f_x(S \cup \{i\}) - f_x(S) \right)$$
+
    Returning top positive contributors (approval strengths) and negative contributors (risk drivers).
 
 2. **Actionable Adverse Action Counterfactual Recourse**:
    When an applicant is denied, regulatory standards mandate actionable guidance. The engine evaluates minimal single-variable and joint counterfactual perturbations to bring $PD < \tau^*$:
-   - **Loan Quantum Reduction**: "Reduce requested loan by $25\%$ ($\text{₹}2,125,000$) to lower LTV to safe thresholds."
-   - **Tenure Extension**: "Extend tenure from $4$ to $8$ years to lower annual DTI debt burden."
-   - **CIBIL Enhancement**: "Improve CIBIL score from $390$ to $750$ by clearing delinquent balances."
+   - **Loan Quantum Reduction**: "Reduce requested loan by 25% (₹2,125,000) to lower LTV to safe thresholds."
+   - **Tenure Extension**: "Extend tenure from 4 to 8 years to lower annual DTI debt burden."
+   - **CIBIL Enhancement**: "Improve CIBIL score from 390 to 750 by clearing delinquent balances."
 
 ---
 
 ### 6. Fair Lending Bias Auditing (Four-Fifths Rule)
 In compliance with Equal Credit Opportunity Act (ECOA) standards, the model is continuously audited using the **Disparate Impact Ratio (DIR)**:
+
 $$\text{DIR} = \frac{P(\hat{Y} = \text{Approved} \mid \text{Unprivileged Group})}{P(\hat{Y} = \text{Approved} \mid \text{Privileged Group})}$$
 
-Under the regulatory **Four-Fifths Rule**, an algorithm passes fair lending scrutiny if $\text{DIR} \ge 0.80$ ($80\%$):
+Under the regulatory **Four-Fifths Rule**, an algorithm passes fair lending scrutiny if $\text{DIR} \ge 0.80$ (80%):
 
 | Proxy Attribute Audited | Privileged Cohort | Unprivileged Cohort | Disparate Impact Ratio | Audit Status |
 | :--- | :--- | :--- | :---: | :---: |
@@ -208,7 +217,8 @@ Under the regulatory **Four-Fifths Rule**, an algorithm passes fair lending scru
 
 ### 7. Population Stability Index (PSI) Drift Monitoring
 To protect against macroeconomic shocks and population demographic shifts, the system computes the Population Stability Index comparing production inference batches ($A$) against the training baseline ($E$):
-$$PSI = \sum_{b=1}^{B} \left( A_b - E_b \right) \times \ln\left( \frac{A_b}{E_b} \right)$$
+
+$$\text{PSI} = \sum_{b=1}^{B} \left( A_b - E_b \right) \times \ln\left( \frac{A_b}{E_b} \right)$$
 
 ```
   PSI < 0.10          -->  STABLE: Distribution consistent with baseline (Green)
